@@ -1,0 +1,2 @@
+include LICENSE README.md requirements.txt
+recursive-include safe-browsing *.py *.html *.js *.css *.png *.jpg
