@@ -8,6 +8,10 @@ from . import utils
 logger = logging.getLogger('safebrowsing')
 
 
+class GSB_Exception(Exception):
+    pass
+
+
 class GSB_Manager(models.Manager):
     timeout = 0
 
