@@ -1,12 +1,18 @@
 import os
 import re
-from distutils.core import setup
-from setuptools import find_packages
-
-README = open(os.path.join(os.path.dirname(__file__), 'README.rst')).read()
+from setuptools import setup, find_packages
 
 # allow setup.py to be run from any path
 os.chdir(os.path.normpath(os.path.join(os.path.abspath(__file__), os.pardir)))
+
+def read_file(filename):
+    """Read a file into a string"""
+    path = os.path.abspath(os.path.dirname(__file__))
+    filepath = os.path.join(path, filename)
+    try:
+        return open(filepath).read()
+    except IOError:
+        return ''
 
 
 def parse_requirements(file_name):
@@ -35,16 +41,16 @@ def parse_dependency_links(file_name):
 
 setup(
     name='django-safe-browsing',
-    version='0.1.0',
-    description='Python Django Safe Browsing',
+    version=__import__('safebrowsing').__version__,
+    description=' '.join(__import__('scribbler').__doc__.splitlines()).strip(),
     author='Roberto Barreda',
     author_email='roberto.barreda@gmail.com',
     url='https://github.com/robertobarreda/django-safe-browsing',
-    packages=find_packages(),
+    packages=find_packages(exclude=['example']),
     include_package_data=True,
     license="MIT license, see LICENSE file",
     install_requires=parse_requirements('requirements.txt'),
     dependency_links=parse_dependency_links('requirements.txt'),
-    long_description=README,
-    test_suite="testrunner.runtests",
+    long_description=read_file('README.rst'),
+    test_suite="runtests.runtests",
 )
