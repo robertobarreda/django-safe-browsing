@@ -1,7 +1,10 @@
 import logging
 import time
 import urllib
+import requests
+
 from django.db import models, IntegrityError, transaction
+
 from .models import GSB_Add, GSB_Sub, GSB_FullHash
 from . import utils
 
@@ -66,20 +69,24 @@ class GSB_Manager(models.Manager):
         qs = qs.filter(Q(modelbs__name=condition) | Q(modelbs__isnull=True))
         qs.filter(sub_chunk_num__isnull=True)
 
-        list_of_unavailable_components = GSB_Sub.objects.exclude(product__in=list_of_available_products).distinct()
-        list_of_available_receipts = Receipt.objects.exclude(receiptcomponent__in = list_of_unavailable_components).distinct()
+        list_of_unavailable_components = GSB_Sub.objects.exclude(
+            product__in=list_of_available_products).distinct()
+        list_of_available_receipts = Receipt.objects.exclude(
+            receiptcomponent__in = list_of_unavailable_components).distinct()
 
-        $stmt = $this->prepare(
-            'SELECT a.* FROM gsb_add a '.
-            'LEFT OUTER JOIN gsb_sub s '.
-            ' ON s.list_id = a.list_id '.
-            ' AND s.host_key = a.host_key '.
-            ' AND s.add_chunk_num = a.add_chunk_num '.
-            ' AND s.prefix = a.prefix '.
-            $where.
-            'AND s.sub_chunk_num IS NULL')
+        # $stmt = $this->prepare(
+        #     'SELECT a.* FROM gsb_add a '.
+        #     'LEFT OUTER JOIN gsb_sub s '.
+        #     ' ON s.list_id = a.list_id '.
+        #     ' AND s.add_chunk_num = a.add_chunk_num '.
+        #     ' AND s.host_key = a.host_key '.
+        #     ' AND s.prefix = a.prefix '.
+        #     $where.
+        #     'AND s.sub_chunk_num IS NULL')
 
-        return (array) $stmt->fetchAll(PDO::FETCH_ASSOC)
+        # return (array) $stmt->fetchAll(PDO::FETCH_ASSOC)
+
+        return qs
 
     def add_insert(self, list_id, add_chunk_num, host_key='', prefix=''):
         try:
@@ -194,7 +201,7 @@ class GSB_Manager(models.Manager):
             buildpart += 'a:' . utils.list2range(adds)
 
         if len(adds) > 0 and len(subs) > 0:
-            buildpart += ':';
+            buildpart += ':'
 
         if len(subs) > 0:
             buildpart += 's:' + utils.list2range(subs)
@@ -265,10 +272,10 @@ class GSB_Manager(models.Manager):
                 result.append({
                     'action': 'sub_insert',
                     'list_id': list_id,
-                    'sub_chunk_num': sub_chunk_num,
                     'add_chunk_num': utils.network2int(raw[offset:offset + 4]),
                     'host_key': hostkey,
                     'prefix': hostkey
+                    'sub_chunk_num': sub_chunk_num,
                 })
                 offset += 4
             else:
@@ -276,12 +283,12 @@ class GSB_Manager(models.Manager):
                     result.append({
                         'action': 'sub_insert',
                         'list_id': list_id,
-                        'sub_chunk_num': sub_chunk_num,
                         'add_chunk_num': utils.network2int(
                             raw[offset:offset + 4]),
                         'host_key': $hostkey,
                         'prefix': utils.bin2hex(
                             raw[offset + 4:offset + 4 + hashlen])
+                        'sub_chunk_num': sub_chunk_num,
                     })
                     offset += 4 + hashlen
 
@@ -314,7 +321,7 @@ class GSB_Manager(models.Manager):
                         'action': 'add_empty',
                         'list_id': list_id,
                         'add_chunk_num': chunk_num
-                    );
+                    )
                 else:
                     result.extend(
                         self.parse_add_shavar_chunk(
@@ -326,7 +333,7 @@ class GSB_Manager(models.Manager):
                         'action': 'sub_empty',
                         'list_id': list_id,
                         'sub_chunk_num': chunk_num
-                    );
+                    )
                 else:
                     result.extend(
                         self.parse_sub_shavar_chunk(
@@ -379,7 +386,7 @@ class GSB_Manager(models.Manager):
                     raise GSB_Exception(
                         "Got URL request before a list was set")
 
-                rr = $this->request->downloadChunks('http://' . value)
+                rr = self.download_chunks('http://' . value)
                 result.extend(
                     self.parse_redirect_response(currentlist, rr))
 
@@ -447,7 +454,7 @@ class GSB_Manager(models.Manager):
         logger.debug("Request = %s", body)
 
         now = time()
-        raw = $this->request->download(body)
+        raw = self.download(body)
 
         # processes and saves all data
         commands = self.parse_download_response(raw)
@@ -502,205 +509,87 @@ class GSB_Manager(models.Manager):
 
     ## Request ---------------------------------------------------------------
 
-    API_APPVER = '1.5.2'
     API_URL = 'http://safebrowsing.clients.google.com/safebrowsing/'
     API_CLIENT = 'api'
+    API_APPVER = '1.5.2'
     API_PVER = '2.2'
 
     # function __construct($apikey, $mode=null, $path=null) {
     #     $this->apikey = $apikey;
     #     $this->counter = 0;
-
     #     $this->mode = $mode;
     #     $this->path = $path;
     # }
 
-    # /**
-    # * Retrieves the types of the GSB lists.
-    # */
-    # function getListTypes() {
-    #     $req = $this->makeRequest('list');
-    #     $result = $this->request($req, null);
-    #     return $result['response'];
-    # }
+    def build_request(self, cmd) {
+        """ Constructs a URL to the GSB API """
+        return "{0}{1}?client={2}&apikey={3}&appver={4}&pver={5}".format(
+            self.API_URL,
+            cmd,
+            self.API_CLIENT,
+            self.apikey,
+            self.API_APPVER,
+            self.API_PVER
+        )
 
-    # /**
-    # * Downloads chunks of the GSB lists for the given list type.
-    # *
-    # * @param unknown_type $body
-    # * @param unknown_type $followBackoff
-    # */
-    # function download($body, $followBackoff = false) {
-    #     $req = $this->makeRequest('downloads');
-    #     $result = $this->post_request($req, $body . "\n", $followBackoff);
-    #     return $result['response'];
-    # }
+    def post_request(url, payload=None, follow_backoff=False):
+        """ Make a request to the GSB API from the given URL's,
+        POST data can be passed via options. follow_backoff indicates
+        whether to follow backoff procedures or not
+        """
+        r = requests.post(url, data=payload)
 
-    # /**
-    # * Retrieves the full hash from the GSB API.
-    # *
-    # * @param unknown_type $body
-    # */
-    # function getFullHash($body) {
-    #     $req = $this->makeRequest('gethash');
-    #     $result = $this->post_request($req, $body);
-    #     $data = $result['response'];
-    #     $httpcode = $result['info']['http_code'];
-    #     if ($httpcode == 200 && !empty($data)) {
-    #         return $data;
-    #     } elseif ($httpcode == 204 && empty($data)) {
-    #         // 204 Means no match
-    #         return '';
-    #     } else {
-    #         throw new GSB_Exception("ERROR: Invalid response returned from GSB ($httpcode)");
-    #     }
-    # }
+        httpcode = r.status_code
 
-    # /**
-    # * Follows the redirect URL and downloads the real chunk data.
-    # *
-    # * @param unknown_type $redirectUrl
-    # * @param unknown_type $followBackoff
-    # * @return Ambigous <multitype:mixed, multitype:mixed >
-    # */
-    # function downloadChunks($redirectUrl) {
-    #     $result = $this->request($redirectUrl);
-    #     return $result['response'];
-    # }
+        if httpcode in (204, 200)
+            pass
+        elif httpcode == 400:
+            raise GSB_Exception("400: Invalid request for %s" % url)
+        elif httpcode == 403:
+            raise GSB_Exception("403: Forbidden. Client id is invalid")
+        elif httpcode == 503:
+            raise GSB_Exception("503: Backoff son.")
+        elif httpcode == 505:
+            raise GSB_Exception("505: Bad Protocol.")
+        else:
+            raise GSB_Exception("Unknown http code %d" % httpcode)
 
-    # /**
-    # * Make a request to the GSB API from the given URL's, POST data can be
-    # * passed via $options. $followBackoff indicates whether to follow backoff
-    # * procedures or not
-    # *
-    # * @param unknown_type $url
-    # * @param unknown_type $options
-    # * @param unknown_type $followBackoff
-    # * @return multitype:mixed
-    # */
-    # function request($url, $followBackoff = false) {
-    #     if ($this->mode == 'replay') {
-    #         $fname = sprintf("%s-%03d.php-serialized", $this->path,
-    #                          $this->counter + 1, '.php-serialized');
-    #         if (file_exists($fname)) {
-    #             print "Replay with $fname\n";
-    #             $result = unserialize(file_get_contents($fname));
-    #             $this->counter++;
+        return {
+            'url': url,
+            'postdata': payload,
+            'httpcode': httpcode,
+            'response': r.content,
+        }
 
-    #             return $result;
-    #         }
-    #     }
+    def download($body, follow_backoff=False):
+        """Downloads chunks of the GSB lists for the given list type."""
+        req = self.build_request('downloads')
+        result = self.post_request(req, body, follow_backoff)
+        return result['response']
 
-    #     $ch = curl_init();
-    #     curl_setopt($ch, CURLOPT_URL, $url);
-    #     curl_setopt($ch, CURLOPT_HEADER, 0);
-    #     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    def download_chunks(self, redirect_url):
+        """Follows the redirect URL and downloads the real chunk data."""
+        result = self.post_request(redirect_url)
+        return result['response']
 
-    #     $data = curl_exec($ch);
-    #     $info = curl_getinfo($ch);
-    #     curl_close($ch);
+    def download_full_hash(self, body):
+        """Retrieves the full hash from the GSB API (aka: getFullHash)."""
+        req = self.build_request('gethash')
+        result = self.post_request(req, body)
+        data = result['response']
+        httpcode = result['http_code']
+        if httpcode == 200 and data:
+            return data
+        if httpcode == 204 and !data:
+            return ''  # 204 Means no match
+        raise GSB_Exception(
+            "ERROR: Invalid response returned from GSB (%d)" % httpcode)
 
-    #     if ($info['http_code'] == 400) {
-    #         throw new GSB_Exception("Invalid request for $url");
-    #     }
-
-    #     if ($followBackoff && $info['http_code'] > 299) {
-    #         //$this->backoff($info, $followBackoff);
-    #     }
-
-    #     $result = array('url' => $url,
-    #                     'postdata' => '',
-    #                     'info' => $info,
-    #                     'response' => $data);
-
-    #     if ($this->mode == 'replay') {
-    #         $this->counter++;
-    #         $fname = sprintf("%s-%03d.php-serialized", $this->path,
-    #                          $this->counter, '.php-serialized');
-    #         printf("Writing $fname\n");
-    #         file_put_contents($fname, serialize($result));
-    #     }
-    #     return $result;
-    # }
-
-    # /**
-    # * Make a request to the GSB API from the given URL's, POST data can be
-    # * passed via $options. $followBackoff indicates whether to follow backoff
-    # * procedures or not
-    # *
-    # * @param unknown_type $url
-    # * @param unknown_type $options
-    # * @param unknown_type $followBackoff
-    # * @return multitype:mixed
-    # */
-    # function post_request($url, $postdata, $followBackoff = false) {
-    #     if ($this->mode == 'replay') {
-    #         $fname = sprintf("%s-%03d.php-serialized", $this->path,
-    #                          $this->counter + 1, '.php-serialized');
-    #         if (file_exists($fname)) {
-    #             print "Replay with $fname\n";
-    #             $result = unserialize(file_get_contents($fname));
-    #             $this->counter++;
-    #             return $result;
-    #         }
-    #     }
-    #     $ch = curl_init();
-    #     curl_setopt($ch, CURLOPT_URL, $url);
-    #     curl_setopt($ch, CURLOPT_HEADER, 0);
-    #     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    #     curl_setopt($ch, CURLOPT_POST, true);
-    #     curl_setopt($ch, CURLOPT_POSTFIELDS, $postdata);
-    #     $data = curl_exec($ch);
-    #     $info = curl_getinfo($ch);
-    #     curl_close($ch);
-
-    #     $httpcode = (int)$info['http_code'];
-    #     switch ($httpcode) {
-    #     case 204:
-    #     case 200:
-    #         // these are ok
-    #         break;
-
-    #     case 400:
-    #         throw new GSB_Exception("400: Invalid request for $url");
-    #     case 403:
-    #         throw new GSB_Exception("403: Forbidden. Client id is invalid");
-    #     case 503:
-    #         throw new GSB_Exception("503: Backoff son.");
-    #     case 505:
-    #         throw new GSB_Exception("505: Bad Protocol.");
-    #     default:
-    #         throw new GSB_Exception("Unknown http code " . $httpcode);
-    #     }
-
-    #     $result = array('url' => $url,
-    #                     'postdata' => $postdata,
-    #                     'info' => $info,
-    #                     'response' => $data);
-
-    #     if ($this->mode == 'replay') {
-    #         $this->counter++;
-    #         $fname = sprintf("%s-%03d.php-serialized", $this->path,
-    #                          $this->counter, '.php-serialized');
-    #         printf("Writing $fname\n");
-    #         file_put_contents($fname, serialize($result));
-    #     }
-    #     return $result;
-    # }
-
-    # /**
-    # * Constructs a URL to the GSB API
-    # */
-    # function makeRequest($cmd) {
-    #     $str = sprintf("%s%s?client=%s&apikey=%s&appver=%s&pver=%s",
-    #                    self::API_URL,
-    #                    $cmd,
-    #                    self::API_CLIENT,
-    #                    $this->apikey,
-    #                    self::API_APPVER,
-    #                    self::API_PVER);
-    #     return $str;
-    # }
+    def get_list_types(self):
+        """Retrieves the types of the GSB lists (aka: getListTypes)."""
+        req = self.build_request('list')
+        result = self.post_request(req)
+        return result['response']
 
 
 gsb_manager = GSB_Manager()
