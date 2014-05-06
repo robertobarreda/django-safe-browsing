@@ -1,7 +1,9 @@
 from django.test import TestCase
-from safebrowsing.vendors.google import client
-from safebrowsing.vendors.google import expression
+
+from ..vendors.google import client
+from ..vendors.google import expression
 from . import util
+
 
 class GSB_ClientTestCase(TestCase):
     def test_parse_full_hash_response(self):
