@@ -1,8 +1,7 @@
-import logging
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
+
 from safebrowsing.managers import gsb_manager
 
-logger = logging.getLogger('safebrowsing')
 
 class Command(BaseCommand):
     help = 'Deletes all items in the safe browsing db'
