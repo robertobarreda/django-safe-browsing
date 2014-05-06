@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import logging
 import time
 import urllib
@@ -47,14 +48,14 @@ class GSB_Manager(models.Manager):
         """
         chunk = 'sub_chunk_num'
         return GSB_Sub.objects.filter(
-            list_id=list_id
+            add_chunk_num__list_id=list_id
         ).order_by(chunk).distinct(chunk).values_list(chunk, flat=True)
 
     def hostkey_select_prefixes(self, host_keys):
         """Finds all prefixes the matches the host key.
 
         @param list[int]string|string host_keys
-        @return list
+        @return QuerySet
         """
         # build the where clause
         if not host_keys:
@@ -65,27 +66,7 @@ class GSB_Manager(models.Manager):
         else:
             qs = GSB_Add.objects.filter(host_key=host_keys)
 
-
-        # build the query, filter out lists that were "subtracted"
-        qs = qs.filter(Q(modelbs__name=condition) | Q(modelbs__isnull=True))
-        qs.filter(sub_chunk_num__isnull=True)
-
-        list_of_unavailable_components = GSB_Sub.objects.exclude(
-            product__in=list_of_available_products).distinct()
-        list_of_available_receipts = Receipt.objects.exclude(
-            receiptcomponent__in = list_of_unavailable_components).distinct()
-
-        with contextlib.closing(connection.cursor()) as c:
-            c.execute(
-                'SELECT a.* FROM gsb_add a '.
-                'LEFT OUTER JOIN gsb_sub s '.
-                ' ON s.list_id = a.list_id '.
-                ' AND s.add_chunk_num = a.add_chunk_num '.
-                ' AND s.host_key = a.host_key '.
-                ' AND s.prefix = a.prefix '
-                + where +
-                'AND s.sub_chunk_num IS NULL')
-            return c.fetchone()[0]
+        return qs.filter(sub_chunk_num__isnull=True)
 
     def add_insert(self, list_id, add_chunk_num, host_key='', prefix=''):
         try:
@@ -107,7 +88,7 @@ class GSB_Manager(models.Manager):
             add_chunk_num__range=(min_add_chunk_name, max_add_chunk_num),
         ).delete()
         GSB_Sub.objects.filter(
-            list_id=list_id,
+            add_chunk_num__list_id=list_id,
             add_chunk_num__range=(min_add_chunk_name, max_add_chunk_num),
         ).delete()
         GSB_FullHash.objects.filter(
@@ -118,12 +99,15 @@ class GSB_Manager(models.Manager):
     def sub_insert(self, list_id, add_chunk_num, sub_chunk_num,
                    host_key='', prefix=''):
         try:
-            GSB_Sub.objects.create(
+            add_chunk_num = GSB_Add.objects.get_or_create(
                 list_id=list_id,
                 add_chunk_num=add_chunk_num,
-                sub_chunk_num=sub_chunk_num,
                 host_key=host_key,
                 prefix=prefix,
+            )
+            GSB_Sub.objects.create(
+                add_chunk_num=add_chunk_num,
+                sub_chunk_num=sub_chunk_num,
             )
         except IntegrityError:
             pass
@@ -133,14 +117,14 @@ class GSB_Manager(models.Manager):
 
     def sub_delete(self, list_id, min_sub_chunk_num, max_sub_chunk_name):
         GSB_Sub.objects.filter(
-            list_id=list_id,
+            add_chunk_num__list_id=list_id,
             sub_chunk_num__range=(min_sub_chunk_name, max_sub_chunk_num),
         ).delete()
 
     def fullhash_delete_old(self, now=None):
         """Delete all obsolete fullhashs"""
         if now is None:
-            now = time.time()
+            now = datetime.datetime.utcnow()
         GSB_FullHash.objects.filter(
             create_ts__lt=(now - (60 * 45))
         ).delete()
@@ -148,23 +132,23 @@ class GSB_Manager(models.Manager):
     def fullhash_insert(self, list_id, add_chunk_num, fullhash, now=None):
         """Insert or Replace full hash"""
         if now is None:
-            now = time.time()
+            now = datetime.datetime.utcnow()
         try:
             GSB_FullHash.objects.create(
                 list_id=list_id,
                 add_chunk_num=add_chunk_num,
                 fullhash=fullhash,
-                create_ts=now)
+                created=now)
         except IntegrityError:
             GSB_FullHash.objects.filter(
                 list_id=list_id,
                 add_chunk_num=add_chunk_num,
                 fullhash=fullhash,
-            ).update(create_ts=now)
+            ).update(created=now)
 
     def fullhash_exists(self, list_id, fullhash, now=None):
         if now is None:
-            now = time.time()
+            now = datetime.datetime.utcnow()
         return GSB_FullHash.objects.filter(
             list_id=list_id,
             fullhash=fullhash,
@@ -172,7 +156,7 @@ class GSB_Manager(models.Manager):
         ).count() > 0
 
     def rfd_get(self):
-        return GSB_rfd.objects.get(pk=1)
+        return GSB_RFD.objects.get(pk=1)
 
     def rfd_set(self, state):
         state.save()
@@ -452,7 +436,7 @@ class GSB_Manager(models.Manager):
 
         logger.debug("Request = %s", body)
 
-        now = time()
+        now = time.time()
         raw = self.download(body)
 
         # processes and saves all data

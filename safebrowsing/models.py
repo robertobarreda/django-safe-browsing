@@ -19,17 +19,3 @@ class ProviderSettings(models.Model):
 
     class Meta:
         unique_together = ('provider', 'key', 'value')
-
-
-
-##############################################################################
-# Base Provider
-##############################################################################
-
-class BaseProvider(models.Model):
-    provider_key = None
-    created = models.DateTimeField(auto_now_add=True)
-    modified = models.DateTimeField(auto_now=True, auto_now_add=True)
-
-    class Meta:
-        abstract = True

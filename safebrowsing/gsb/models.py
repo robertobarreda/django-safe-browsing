@@ -2,12 +2,10 @@ import logging
 
 from django.db import models, IntegrityError
 
-from ..models import BaseProvider
-
-logger = logging.getLogger('safebrowsing')
+logger = logging.getLogger('safebrowsing.gsb')
 
 
-class GSB_BaseProvider(BaseProvider):
+class GSB(models.Model):
     GOOG_MALWARE = 1
     GOOG_REGTEST = 2
     GOOG_WHITEDOMAIN = 3
@@ -20,14 +18,16 @@ class GSB_BaseProvider(BaseProvider):
         GOOG_PHISH: 'googpub-phish-shavar',
     }
 
+    created = models.DateTimeField(auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True, auto_now_add=True)
+
     class Meta:
         abstract = True
 
 
-class GSB_Add(GSB_BaseProvider):
-    provider_key = 'google'
+class GSB_Add(GSB):
     list_id = models.PositiveSmallIntegerField(
-        choices=GSB_BaseProvider.LIST_TYPE.iteritems())
+        choices=GSB.LIST_TYPE.iteritems(), db_index=True)
     add_chunk_num = models.IntegerField()
     host_key = models.CharField(max_length=8, db_index=True)
     prefix = models.CharField(max_length=64)
@@ -36,32 +36,23 @@ class GSB_Add(GSB_BaseProvider):
         unique_together = ('list_id', 'add_chunk_num', 'host_key', 'prefix')
 
 
-class GSB_Sub(GSB_BaseProvider):
-    provider_key = 'google'
+class GSB_Sub(GSB):
+    add_chunk_num = models.OneToOneField(
+        GSB_Add, primary_key=True, related_name='sub_chunk_num')
+    sub_chunk_num = models.IntegerField(db_index=True)
+
+
+class GSB_FullHash(GSB):
     list_id = models.PositiveSmallIntegerField(
-        choices=GSB_BaseProvider.LIST_TYPE.iteritems())
-    add_chunk_num = models.IntegerField()
-    host_key = models.CharField(max_length=8)
-    prefix = models.CharField(max_length=64)
-    sub_chunk_num = models.IntegerField()
-
-    class Meta:
-        unique_together = ('list_id', 'add_chunk_num', 'host_key', 'prefix')
-        # index_together = [('list_id', 'sub_chunk_num')]
-
-
-class GSB_FullHash(GSB_BaseProvider):
-    list_id = models.PositiveSmallIntegerField(
-        choices=GSB_BaseProvider.LIST_TYPE.iteritems())
+        choices=GSB.LIST_TYPE.iteritems(), db_index=True)
     add_chunk_num = models.IntegerField()
     fullhash = models.CharField(max_length=64)
-    create_ts = models.PositiveIntegerField()
 
     class Meta:
         unique_together = ('list_id', 'add_chunk_num', 'fullhash')
 
 
-class GSB_rfd(GSB_BaseProvider):
+class GSB_RFD(GSB):
    next_attempt = models.PositiveIntegerField()
    error_count = models.PositiveIntegerField()
    last_attempt = models.PositiveIntegerField()
