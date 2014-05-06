@@ -514,30 +514,26 @@ class GSB_Manager(models.Manager):
     API_APPVER = '1.5.2'
     API_PVER = '2.2'
 
-    # function __construct($apikey, $mode=null, $path=null) {
-    #     $this->apikey = $apikey;
-    #     $this->counter = 0;
-    #     $this->mode = $mode;
-    #     $this->path = $path;
-    # }
-
-    def build_request(self, cmd) {
+    def build_url(self, cmd):
         """ Constructs a URL to the GSB API """
-        return "{0}{1}?client={2}&apikey={3}&appver={4}&pver={5}".format(
-            self.API_URL,
-            cmd,
-            self.API_CLIENT,
-            self.apikey,
-            self.API_APPVER,
-            self.API_PVER
-        )
+        return "".join([self.API_URL, cmd])
 
-    def post_request(url, payload=None, follow_backoff=False):
+    def build_params(self, cmd):
+        """ Constructs a dict with the default to the GSB API """
+        return {
+            'client': self.API_CLIENT,
+            'apikey': self.apikey,
+            'appver': self.API_APPVER,
+            'pver': self.API_PVER
+        }
+
+    def post_request(url, data=None, follow_backoff=False):
         """ Make a request to the GSB API from the given URL's,
         POST data can be passed via options. follow_backoff indicates
         whether to follow backoff procedures or not
         """
-        r = requests.post(url, data=payload)
+        params = self.build_params()
+        r = requests.post(url, params=params, data=data)
 
         httpcode = r.status_code
 
@@ -555,16 +551,16 @@ class GSB_Manager(models.Manager):
             raise GSB_Exception("Unknown http code %d" % httpcode)
 
         return {
-            'url': url,
-            'postdata': payload,
+            'url': r.url,
+            'postdata': data,
             'httpcode': httpcode,
             'response': r.content,
         }
 
-    def download($body, follow_backoff=False):
+    def download(self, body, follow_backoff=False):
         """Downloads chunks of the GSB lists for the given list type."""
-        req = self.build_request('downloads')
-        result = self.post_request(req, body, follow_backoff)
+        url = self.build_url('downloads')
+        result = self.post_request(url, body, follow_backoff)
         return result['response']
 
     def download_chunks(self, redirect_url):
@@ -574,21 +570,21 @@ class GSB_Manager(models.Manager):
 
     def download_full_hash(self, body):
         """Retrieves the full hash from the GSB API (aka: getFullHash)."""
-        req = self.build_request('gethash')
-        result = self.post_request(req, body)
+        url = self.build_url('gethash')
+        result = self.post_request(url, body)
         data = result['response']
         httpcode = result['http_code']
         if httpcode == 200 and data:
             return data
-        if httpcode == 204 and !data:
+        if httpcode == 204 and not data:
             return ''  # 204 Means no match
         raise GSB_Exception(
             "ERROR: Invalid response returned from GSB (%d)" % httpcode)
 
     def get_list_types(self):
         """Retrieves the types of the GSB lists (aka: getListTypes)."""
-        req = self.build_request('list')
-        result = self.post_request(req)
+        url = self.build_url('list')
+        result = self.post_request(url)
         return result['response']
 
 
